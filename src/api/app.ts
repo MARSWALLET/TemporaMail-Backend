@@ -1,3 +1,4 @@
+import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -10,11 +11,14 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { ZodError } from 'zod';
 import type { EnvConfig } from '../config/env.js';
+import type { Mailer } from '../mail/mailer.js';
 import type { AdminStore } from '../storage/adminStore.js';
+import type { AuthStore } from '../storage/authStore.js';
 import { InboxEventHub } from '../stream/pubsub.js';
 import { registerSseRoute } from '../stream/sse.js';
 import { ApiError, formatApiError } from './errors.js';
 import { registerAdminRoutes } from './routes/admin.js';
+import { registerAuthRoutes } from './routes/auth.js';
 import { registerV1Routes } from './routes/v1.js';
 
 export interface ApiAppDependencies {
@@ -29,6 +33,8 @@ export interface ApiAppDependencies {
   readonly getAllowedDomains?: () => readonly string[];
   readonly verifyTurnstile?: (token: string, ip: string) => Promise<boolean>;
   readonly adminStore?: AdminStore;
+  readonly authStore?: AuthStore;
+  readonly mailer?: Mailer;
   readonly onLiveSettingsMutated?: () => Promise<void>;
 }
 
@@ -43,6 +49,8 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
     getAllowedDomains,
     verifyTurnstile,
     adminStore,
+    authStore,
+    mailer,
     onLiveSettingsMutated,
   } = deps;
 
@@ -56,6 +64,7 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
   });
 
   await app.register(helmet);
+  await app.register(cookie);
 
   await app.register(cors, {
     origin: (origin, callback) => {
@@ -139,6 +148,17 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
         eventHub,
         ...(sseHeartbeatMs !== undefined ? { heartbeatMs: sseHeartbeatMs } : {}),
       });
+      if (authStore && mailer) {
+        await registerAuthRoutes(v1, {
+          config,
+          redis,
+          logger,
+          authStore,
+          mailer,
+          ...(getAllowedDomains ? { getAllowedDomains } : {}),
+          ...(verifyTurnstile ? { verifyTurnstile } : {}),
+        });
+      }
       if (adminStore) {
         await v1.register(
           async (admin) => {

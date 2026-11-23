@@ -1,8 +1,10 @@
 import { loadEnv } from '../config/env.js';
 import { createDbLiveSettingsLoader, LiveSettingsStore } from '../config/liveSettings.js';
 import { startMaintenanceJobs } from '../jobs/scheduler.js';
+import { createMailer } from '../mail/mailer.js';
 import { verifyTurnstileToken } from '../protection/turnstile.js';
 import { createDbAdminStore } from '../storage/adminStore.js';
+import { createDbAuthStore } from '../storage/authStore.js';
 import { createDbConnection, type DbConnection } from '../storage/db.js';
 import { createRedisClient } from '../storage/redis.js';
 import { createLogger } from '../utils/logger.js';
@@ -36,17 +38,21 @@ async function main(): Promise<void> {
     });
   }
 
+  const mailer = createMailer({ config, logger });
+
   const app = await createApiApp({
     config,
     redis,
     logger,
     rateLimitRedis: redis,
+    mailer,
     getAllowedDomains: () => liveSettings.getAllowedDomains(),
     verifyTurnstile: (token, ip) =>
       verifyTurnstileToken(token, ip, { secret: config.turnstileSecret }, logger),
     ...(dbConn
       ? {
           adminStore: createDbAdminStore(dbConn.db),
+          authStore: createDbAuthStore(dbConn.db),
           onLiveSettingsMutated: async () => {
             await liveSettings.refresh();
           },
