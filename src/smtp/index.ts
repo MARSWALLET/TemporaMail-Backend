@@ -1,4 +1,5 @@
 import { loadEnv } from '../config/env.js';
+import { processIncomingMessage } from '../pipeline/processMessage.js';
 import { createRedisClient } from '../storage/redis.js';
 import { createLogger } from '../utils/logger.js';
 import { createSmtpServer } from './server.js';
@@ -18,16 +19,11 @@ async function main(): Promise<void> {
     logger,
     hooks: {
       async onMessage(message) {
-        logger.info(
-          {
-            sessionId: message.sessionId,
-            remoteAddress: message.remoteAddress,
-            mailFrom: message.mailFrom,
-            rcptTo: message.rcptTo,
-            bytes: message.raw.length,
-          },
-          'Accepted inbound SMTP message',
-        );
+        await processIncomingMessage(message, {
+          config,
+          redis,
+          logger,
+        });
       },
     },
   });

@@ -5,6 +5,7 @@ Receive-only temporary email backend for `temporamail.app`.
 ## Implemented So Far
 - **Step 0**: Strict TypeScript project scaffolding, Zod env config, Pino logger, cryptographic address/token generator, Redis storage & `setInboxTTL` helper.
 - **Step 1**: Inbound SMTP receiver (`smtp-server`) with `STARTTLS` support, disabled `AUTH`, per-IP connection limits, IP ban check, recipient lookup against Redis, max recipient cap, and hard message size cap.
+- **Step 2**: Message pipeline & storage (`mailparser`, `sanitize-html` with remote content detection, OTP & verification link extraction, dangerous attachment blocking & size limits, Redis message/attachment storage, `MAX_MESSAGES_PER_INBOX` trimming with eviction cleanup, and `new:{address}` pub/sub publishing).
 
 ## Local Development
 
