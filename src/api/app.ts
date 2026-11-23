@@ -10,6 +10,8 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { ZodError } from 'zod';
 import type { EnvConfig } from '../config/env.js';
+import { InboxEventHub } from '../stream/pubsub.js';
+import { registerSseRoute } from '../stream/sse.js';
 import { ApiError, formatApiError } from './errors.js';
 import { registerV1Routes } from './routes/v1.js';
 
@@ -19,12 +21,28 @@ export interface ApiAppDependencies {
   readonly logger: Logger;
   /** Pass Redis instance for distributed rate limiting in production/dev; omit in mock unit tests. */
   readonly rateLimitRedis?: Redis;
+  /** Optional shared SSE event hub; created automatically from redis.duplicate() when omitted. */
+  readonly eventHub?: InboxEventHub;
+  readonly sseHeartbeatMs?: number;
   readonly getAllowedDomains?: () => readonly string[];
   readonly verifyTurnstile?: (token: string, ip: string) => Promise<boolean>;
 }
 
 export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyInstance> {
-  const { config, redis, logger, rateLimitRedis, getAllowedDomains, verifyTurnstile } = deps;
+  const {
+    config,
+    redis,
+    logger,
+    rateLimitRedis,
+    eventHub: providedEventHub,
+    sseHeartbeatMs,
+    getAllowedDomains,
+    verifyTurnstile,
+  } = deps;
+
+  const ownsEventHub = !providedEventHub;
+  const eventHub = providedEventHub ?? new InboxEventHub(redis.duplicate(), logger);
+  await eventHub.start();
 
   const app = Fastify({
     loggerInstance: logger as FastifyBaseLogger,
@@ -108,9 +126,22 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
         ...(getAllowedDomains ? { getAllowedDomains } : {}),
         ...(verifyTurnstile ? { verifyTurnstile } : {}),
       });
+      await registerSseRoute(v1, {
+        config,
+        redis,
+        logger,
+        eventHub,
+        ...(sseHeartbeatMs !== undefined ? { heartbeatMs: sseHeartbeatMs } : {}),
+      });
     },
     { prefix: '/api/v1' },
   );
+
+  if (ownsEventHub) {
+    app.addHook('onClose', async () => {
+      await eventHub.close();
+    });
+  }
 
   return app;
 }

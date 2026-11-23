@@ -7,6 +7,7 @@ Receive-only temporary email backend for `temporamail.app`.
 - **Step 1**: Inbound SMTP receiver (`smtp-server`) with `STARTTLS` support, disabled `AUTH`, per-IP connection limits, IP ban check, recipient lookup against Redis, max recipient cap, and hard message size cap.
 - **Step 2**: Message pipeline & storage (`mailparser`, `sanitize-html` with remote content detection, OTP & verification link extraction, dangerous attachment blocking & size limits, Redis message/attachment storage, `MAX_MESSAGES_PER_INBOX` trimming with eviction cleanup, and `new:{address}` pub/sub publishing).
 - **Step 3**: Fastify REST API (`/api/v1`) with Zod validation, `@fastify/cors`, `@fastify/helmet`, `@fastify/rate-limit`, `ownerToken` enforcement, safe attachment downloads, and consistent `{ error: { code, message } }` responses.
+- **Step 4**: Live Stream (SSE) on `GET /api/v1/inbox/:address/stream` backed by a single shared Redis `psubscribe('new:*')` fan-out hub, 25s heartbeats, expiry auto-close, and automatic disconnect cleanup.
 
 ## Local Development
 
