@@ -8,6 +8,7 @@ Receive-only temporary email backend for `temporamail.app`.
 - **Step 2**: Message pipeline & storage (`mailparser`, `sanitize-html` with remote content detection, OTP & verification link extraction, dangerous attachment blocking & size limits, Redis message/attachment storage, `MAX_MESSAGES_PER_INBOX` trimming with eviction cleanup, and `new:{address}` pub/sub publishing).
 - **Step 3**: Fastify REST API (`/api/v1`) with Zod validation, `@fastify/cors`, `@fastify/helmet`, `@fastify/rate-limit`, `ownerToken` enforcement, safe attachment downloads, and consistent `{ error: { code, message } }` responses.
 - **Step 4**: Live Stream (SSE) on `GET /api/v1/inbox/:address/stream` backed by a single shared Redis `psubscribe('new:*')` fan-out hub, 25s heartbeats, expiry auto-close, and automatic disconnect cleanup.
+- **Step 5**: Protection layer (SMTP IP rate limits + 1-hour repeat-offender auto-ban, DNSBL with 10-min Redis cache & fail-open, `mailauth` SPF/DKIM/DMARC with hard DMARC reject, Rspamd `/checkv2` scoring with fail-open, in-memory blocklists, inbox-creation abuse detection, and Cloudflare Turnstile verification).
 
 ## Local Development
 

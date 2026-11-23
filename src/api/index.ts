@@ -1,4 +1,5 @@
 import { loadEnv } from '../config/env.js';
+import { verifyTurnstileToken } from '../protection/turnstile.js';
 import { createRedisClient } from '../storage/redis.js';
 import { createLogger } from '../utils/logger.js';
 import { createApiApp } from './app.js';
@@ -17,6 +18,8 @@ async function main(): Promise<void> {
     redis,
     logger,
     rateLimitRedis: redis,
+    verifyTurnstile: (token, ip) =>
+      verifyTurnstileToken(token, ip, { secret: config.turnstileSecret }, logger),
   });
 
   await app.listen({

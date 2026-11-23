@@ -31,6 +31,19 @@ const envSchema = z.object({
   SMTP_MAX_CLIENTS: z.coerce.number().int().min(1).default(100),
   SMTP_MAX_CONNECTIONS_PER_IP: z.coerce.number().int().min(1).default(5),
   SMTP_MAX_RECIPIENTS: z.coerce.number().int().min(1).default(5),
+  SMTP_MAX_MESSAGES_PER_MIN: z.coerce.number().int().min(1).default(10),
+  RSPAMD_REJECT_SCORE: z.coerce.number().min(0).default(15),
+  RSPAMD_FLAG_SCORE: z.coerce.number().min(0).default(6),
+  DNSBL_ZONES: z
+    .string()
+    .optional()
+    .default('zen.spamhaus.org,bl.spamcop.net')
+    .transform((value) =>
+      value
+        .split(',')
+        .map((zone) => zone.trim().toLowerCase())
+        .filter((zone) => zone.length > 0),
+    ),
   CORS_ORIGINS: z
     .string()
     .optional()
@@ -68,6 +81,10 @@ export interface EnvConfig {
   readonly smtpMaxClients: number;
   readonly smtpMaxConnectionsPerIp: number;
   readonly smtpMaxRecipients: number;
+  readonly smtpMaxMessagesPerMin: number;
+  readonly rspamdRejectScore: number;
+  readonly rspamdFlagScore: number;
+  readonly dnsblZones: readonly string[];
   readonly corsOrigins: readonly string[];
   readonly apiRateLimitPerMin: number;
   readonly inboxCreateLimitPerHour: number;
@@ -110,6 +127,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
     smtpMaxClients: parsed.SMTP_MAX_CLIENTS,
     smtpMaxConnectionsPerIp: parsed.SMTP_MAX_CONNECTIONS_PER_IP,
     smtpMaxRecipients: parsed.SMTP_MAX_RECIPIENTS,
+    smtpMaxMessagesPerMin: parsed.SMTP_MAX_MESSAGES_PER_MIN,
+    rspamdRejectScore: parsed.RSPAMD_REJECT_SCORE,
+    rspamdFlagScore: parsed.RSPAMD_FLAG_SCORE,
+    dnsblZones: parsed.DNSBL_ZONES,
     corsOrigins,
     apiRateLimitPerMin: parsed.API_RATE_LIMIT_PER_MIN,
     inboxCreateLimitPerHour: parsed.INBOX_CREATE_LIMIT_PER_HOUR,
