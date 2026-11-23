@@ -7,6 +7,7 @@ import {
   hashPassword,
   passwordNeedsRehash,
   validatePasswordStrength,
+  verifyDummyPassword,
   verifyPassword,
 } from '../../auth/password.js';
 import {
@@ -335,6 +336,7 @@ export async function registerAuthRoutes(
 
       const user = await authStore.findUserByEmail(email);
       if (!user || !user.passwordHash || user.status !== 'active') {
+        await verifyDummyPassword(body.password);
         await recordFailedLogin(redis, email);
         throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
       }
@@ -590,6 +592,31 @@ export async function registerAuthRoutes(
 
     await destroyUserSession(redis, id, user.id);
     return { deleted: true };
+  });
+
+  // GET /api/v1/account/export (GDPR data portability export — never includes secrets/hashes)
+  app.get('/account/export', async (request) => {
+    const { user } = await requireAuthenticatedSession(request, false);
+    const [sessions, oauthAccounts] = await Promise.all([
+      listUserSessions(redis, user.id),
+      authStore.listOAuthAccounts(user.id),
+    ]);
+
+    return {
+      exportedAt: new Date().toISOString(),
+      user: sanitizeUserResponse(user),
+      oauthAccounts: oauthAccounts.map((a) => ({
+        provider: a.provider,
+        email: a.email,
+        createdAt: a.createdAt.toISOString(),
+      })),
+      activeSessions: sessions.map((s) => ({
+        ip: s.ip,
+        userAgent: s.userAgent,
+        createdAt: new Date(s.createdAt).toISOString(),
+        lastSeenAt: new Date(s.lastSeenAt).toISOString(),
+      })),
+    };
   });
 
   // POST /api/v1/account/delete

@@ -142,11 +142,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
     (parsed.NODE_ENV === 'production'
       ? `https://${parsed.PRIMARY_DOMAIN.toLowerCase()}`
       : 'http://localhost:3001');
+  const primaryDomain = parsed.PRIMARY_DOMAIN.toLowerCase();
   const corsOrigins =
     parsed.CORS_ORIGINS.length > 0
       ? parsed.CORS_ORIGINS
       : parsed.NODE_ENV === 'production'
-        ? [`https://${parsed.PRIMARY_DOMAIN.toLowerCase()}`]
+        ? [`https://${primaryDomain}`, `https://admin.${primaryDomain}`]
         : ['http://localhost:3000', 'http://localhost:3001'];
 
   if (parsed.DEFAULT_TTL_MINUTES > parsed.MAX_TTL_MINUTES) {

@@ -80,12 +80,23 @@ export async function hashPassword(password: string): Promise<string> {
   return argon2.hash(password, ARGON2_OPTIONS);
 }
 
+/**
+ * Precomputed valid argon2id hash used when verifying login for a non-existent account
+ * so login latency stays constant and prevents timing-based email enumeration.
+ */
+const DUMMY_ARGON2ID_HASH =
+  '$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHR2YWx1ZTEyMw$3q2+796tvu/er77v3q++796tvu/er77v3q++796tvu8';
+
 export async function verifyPassword(hash: string, password: string): Promise<boolean> {
   try {
     return await argon2.verify(hash, password);
   } catch {
     return false;
   }
+}
+
+export async function verifyDummyPassword(password: string): Promise<void> {
+  await verifyPassword(DUMMY_ARGON2ID_HASH, password);
 }
 
 export function passwordNeedsRehash(hash: string): boolean {

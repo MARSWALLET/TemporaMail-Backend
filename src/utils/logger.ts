@@ -1,10 +1,55 @@
-import pino, { type Logger } from 'pino';
+import pino, { type DestinationStream, type Logger } from 'pino';
 
-export function createLogger(name: string, level: string = 'info', nodeEnv: string = 'development'): Logger {
+export const LOG_REDACT_PATHS: readonly string[] = [
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'req.headers["x-owner-token"]',
+  'req.headers["x-admin-api-key"]',
+  'headers.authorization',
+  'headers.cookie',
+  'password',
+  'newPassword',
+  'currentPassword',
+  'passwordHash',
+  'token',
+  'mfaToken',
+  'ownerToken',
+  'apiKey',
+  'key',
+  'secret',
+  'totpSecret',
+  'recoveryCodes',
+  '*.password',
+  '*.newPassword',
+  '*.currentPassword',
+  '*.passwordHash',
+  '*.token',
+  '*.mfaToken',
+  '*.ownerToken',
+  '*.apiKey',
+  '*.secret',
+  '*.totpSecret',
+  '*.recoveryCodes',
+];
+
+export function createLogger(
+  name: string,
+  level: string = 'info',
+  nodeEnv: string = 'development',
+  destination?: DestinationStream,
+): Logger {
   const baseOptions: pino.LoggerOptions = {
     name,
-    level: nodeEnv === 'test' ? 'silent' : level,
+    level: nodeEnv === 'test' && !destination ? 'silent' : level,
+    redact: {
+      paths: [...LOG_REDACT_PATHS],
+      censor: '[REDACTED]',
+    },
   };
+
+  if (destination) {
+    return pino(baseOptions, destination);
+  }
 
   if (nodeEnv === 'development') {
     return pino({
