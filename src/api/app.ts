@@ -15,12 +15,14 @@ import type { EnvConfig } from '../config/env.js';
 import type { Mailer } from '../mail/mailer.js';
 import type { AccountInboxStore } from '../storage/accountInboxStore.js';
 import type { AdminStore } from '../storage/adminStore.js';
+import type { ApiKeyStore } from '../storage/apiKeyStore.js';
 import type { AuthStore } from '../storage/authStore.js';
 import { InboxEventHub } from '../stream/pubsub.js';
 import { registerSseRoute } from '../stream/sse.js';
 import { ApiError, formatApiError } from './errors.js';
 import { registerAccountInboxRoutes } from './routes/accountInboxes.js';
 import { registerAdminRoutes } from './routes/admin.js';
+import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerOAuthRoutes } from './routes/oauth.js';
 import { registerTwoFactorRoutes } from './routes/twoFactor.js';
@@ -40,6 +42,7 @@ export interface ApiAppDependencies {
   readonly adminStore?: AdminStore;
   readonly authStore?: AuthStore;
   readonly accountInboxStore?: AccountInboxStore;
+  readonly apiKeyStore?: ApiKeyStore;
   readonly mailer?: Mailer;
   readonly googleOAuthClient?: GoogleOAuthClient;
   readonly onLiveSettingsMutated?: () => Promise<void>;
@@ -58,6 +61,7 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
     adminStore,
     authStore,
     accountInboxStore,
+    apiKeyStore,
     mailer,
     googleOAuthClient,
     onLiveSettingsMutated,
@@ -147,6 +151,9 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
       await registerV1Routes(v1, {
         config,
         redis,
+        logger,
+        ...(apiKeyStore ? { apiKeyStore } : {}),
+        ...(authStore ? { authStore } : {}),
         ...(getAllowedDomains ? { getAllowedDomains } : {}),
         ...(verifyTurnstile ? { verifyTurnstile } : {}),
       });
@@ -189,6 +196,16 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
             authStore,
             accountInboxStore,
             ...(getAllowedDomains ? { getAllowedDomains } : {}),
+          });
+        }
+        if (apiKeyStore) {
+          await registerApiKeyRoutes(v1, {
+            config,
+            redis,
+            logger,
+            authStore,
+            apiKeyStore,
+            mailer,
           });
         }
       }

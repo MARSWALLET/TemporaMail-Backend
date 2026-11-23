@@ -1,7 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Redis } from 'ioredis';
+import type { Logger } from 'pino';
 import { z } from 'zod';
+import { authenticateOptionalApiKey } from '../../auth/apiKeyAuth.js';
 import type { EnvConfig } from '../../config/env.js';
+import type { ApiKeyStore } from '../../storage/apiKeyStore.js';
+import type { AuthStore } from '../../storage/authStore.js';
 import {
   createInbox,
   deleteInbox,
@@ -20,6 +24,9 @@ import { ApiError } from '../errors.js';
 export interface V1RoutesDependencies {
   readonly config: EnvConfig;
   readonly redis: Redis;
+  readonly logger?: Logger;
+  readonly apiKeyStore?: ApiKeyStore;
+  readonly authStore?: AuthStore;
   readonly getAllowedDomains?: () => readonly string[];
   readonly verifyTurnstile?: (token: string, ip: string) => Promise<boolean>;
 }
@@ -87,10 +94,27 @@ export async function registerV1Routes(
   app: FastifyInstance,
   deps: V1RoutesDependencies,
 ): Promise<void> {
-  const { config, redis, getAllowedDomains, verifyTurnstile } = deps;
+  const { config, redis, logger, apiKeyStore, authStore, getAllowedDomains, verifyTurnstile } =
+    deps;
 
   const resolveAllowedDomains = (): readonly string[] =>
     getAllowedDomains ? getAllowedDomains() : config.allowedDomains;
+
+  const checkApiKey = async (
+    request: FastifyRequest,
+    reply: import('fastify').FastifyReply,
+    scope: 'inbox:create' | 'inbox:read' | 'inbox:delete' | 'messages:read',
+  ) => {
+    if (!apiKeyStore) {
+      return null;
+    }
+    return authenticateOptionalApiKey(request, reply, scope, {
+      redis,
+      apiKeyStore,
+      ...(authStore ? { authStore } : {}),
+      logger: logger ?? (app.log as unknown as Logger),
+    });
+  };
 
   // POST /api/v1/inbox
   app.post(
@@ -109,6 +133,7 @@ export async function registerV1Routes(
         throw new ApiError(403, 'IP_BANNED', 'Access denied');
       }
 
+      const apiKeyCtx = await checkApiKey(request, reply, 'inbox:create');
       const body = createInboxBodySchema.parse(request.body ?? {});
       const allowedDomains = resolveAllowedDomains();
       const targetDomain = body.domain ?? allowedDomains[0] ?? config.primaryDomain;
@@ -117,16 +142,20 @@ export async function registerV1Routes(
         throw new ApiError(400, 'INVALID_DOMAIN', 'Requested domain is not available');
       }
 
+      const maxTtlAllowed = apiKeyCtx
+        ? apiKeyCtx.entitlements.maxInboxLifetimeMinutes
+        : config.maxTtlMinutes;
       const requestedTtlMinutes = body.ttlMinutes ?? config.defaultTtlMinutes;
-      if (requestedTtlMinutes > config.maxTtlMinutes) {
+      if (requestedTtlMinutes > maxTtlAllowed) {
         throw new ApiError(
           400,
           'TTL_EXCEEDS_MAX',
-          `ttlMinutes cannot exceed ${config.maxTtlMinutes}`,
+          `ttlMinutes cannot exceed ${maxTtlAllowed}`,
         );
       }
 
-      if (config.nodeEnv === 'production') {
+      // Spec 5.3: Skip CAPTCHA requirement for key-authenticated POST /inbox
+      if (!apiKeyCtx && config.nodeEnv === 'production') {
         if (!body.turnstileToken) {
           throw new ApiError(400, 'CAPTCHA_REQUIRED', 'Turnstile verification token is required');
         }
@@ -153,7 +182,8 @@ export async function registerV1Routes(
   );
 
   // GET /api/v1/inbox/:address
-  app.get('/inbox/:address', async (request) => {
+  app.get('/inbox/:address', async (request, reply) => {
+    await checkApiKey(request, reply, 'inbox:read');
     const { address: rawAddress } = addressParamSchema.parse(request.params);
     const address = normalizeAddress(rawAddress);
     const inbox = await getInbox(redis, address);
@@ -175,7 +205,8 @@ export async function registerV1Routes(
   });
 
   // GET /api/v1/inbox/:address/messages
-  app.get('/inbox/:address/messages', async (request) => {
+  app.get('/inbox/:address/messages', async (request, reply) => {
+    await checkApiKey(request, reply, 'messages:read');
     const { address: rawAddress } = addressParamSchema.parse(request.params);
     const address = normalizeAddress(rawAddress);
     const inbox = await getInbox(redis, address);
@@ -201,7 +232,8 @@ export async function registerV1Routes(
   });
 
   // GET /api/v1/inbox/:address/messages/:id
-  app.get('/inbox/:address/messages/:id', async (request) => {
+  app.get('/inbox/:address/messages/:id', async (request, reply) => {
+    await checkApiKey(request, reply, 'messages:read');
     const { address: rawAddress, id } = messageParamsSchema.parse(request.params);
     const address = normalizeAddress(rawAddress);
     const inbox = await getInbox(redis, address);
@@ -277,7 +309,8 @@ export async function registerV1Routes(
   });
 
   // DELETE /api/v1/inbox/:address
-  app.delete('/inbox/:address', async (request) => {
+  app.delete('/inbox/:address', async (request, reply) => {
+    await checkApiKey(request, reply, 'inbox:delete');
     const { address: rawAddress } = addressParamSchema.parse(request.params);
     const address = normalizeAddress(rawAddress);
     const inbox = await getInbox(redis, address);

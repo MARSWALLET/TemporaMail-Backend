@@ -5,6 +5,7 @@ import { createMailer } from '../mail/mailer.js';
 import { verifyTurnstileToken } from '../protection/turnstile.js';
 import { createDbAccountInboxStore } from '../storage/accountInboxStore.js';
 import { createDbAdminStore } from '../storage/adminStore.js';
+import { createDbApiKeyStore } from '../storage/apiKeyStore.js';
 import { createDbAuthStore } from '../storage/authStore.js';
 import { createDbConnection, type DbConnection } from '../storage/db.js';
 import { createRedisClient } from '../storage/redis.js';
@@ -56,6 +57,7 @@ async function main(): Promise<void> {
       ? {
           adminStore: createDbAdminStore(dbConn.db),
           authStore: createDbAuthStore(dbConn.db),
+          apiKeyStore: createDbApiKeyStore(dbConn.db),
           ...(accountInboxStore ? { accountInboxStore } : {}),
           onLiveSettingsMutated: async () => {
             await liveSettings.refresh();
