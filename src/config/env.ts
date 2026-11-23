@@ -78,6 +78,16 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().trim().optional().default(''),
   GOOGLE_REDIRECT_URI: z.string().trim().optional().default(''),
   TOTP_ENCRYPTION_KEY: z.string().trim().optional().default(''),
+  ADMIN_IP_ALLOWLIST: z
+    .string()
+    .optional()
+    .default('')
+    .transform((value) =>
+      value
+        .split(',')
+        .map((ip) => ip.trim())
+        .filter((ip) => ip.length > 0),
+    ),
 });
 
 export interface EnvConfig {
@@ -121,6 +131,7 @@ export interface EnvConfig {
   readonly googleClientSecret: string;
   readonly googleRedirectUri: string;
   readonly totpEncryptionKey: string;
+  readonly adminIpAllowlist: readonly string[];
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
@@ -191,5 +202,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
       (parsed.NODE_ENV === 'production'
         ? ''
         : '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
+    adminIpAllowlist: parsed.ADMIN_IP_ALLOWLIST,
   };
 }

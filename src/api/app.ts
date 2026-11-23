@@ -14,6 +14,7 @@ import type { GoogleOAuthClient } from '../auth/googleOAuth.js';
 import type { EnvConfig } from '../config/env.js';
 import type { Mailer } from '../mail/mailer.js';
 import type { AccountInboxStore } from '../storage/accountInboxStore.js';
+import type { AdminPanelStore } from '../storage/adminPanelStore.js';
 import type { AdminStore } from '../storage/adminStore.js';
 import type { ApiKeyStore } from '../storage/apiKeyStore.js';
 import type { AuthStore } from '../storage/authStore.js';
@@ -22,6 +23,7 @@ import { registerSseRoute } from '../stream/sse.js';
 import { ApiError, formatApiError } from './errors.js';
 import { registerAccountInboxRoutes } from './routes/accountInboxes.js';
 import { registerAdminRoutes } from './routes/admin.js';
+import { registerAdminPanelRoutes } from './routes/adminPanel.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerOAuthRoutes } from './routes/oauth.js';
@@ -40,6 +42,7 @@ export interface ApiAppDependencies {
   readonly getAllowedDomains?: () => readonly string[];
   readonly verifyTurnstile?: (token: string, ip: string) => Promise<boolean>;
   readonly adminStore?: AdminStore;
+  readonly adminPanelStore?: AdminPanelStore;
   readonly authStore?: AuthStore;
   readonly accountInboxStore?: AccountInboxStore;
   readonly apiKeyStore?: ApiKeyStore;
@@ -59,6 +62,7 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
     getAllowedDomains,
     verifyTurnstile,
     adminStore,
+    adminPanelStore,
     authStore,
     accountInboxStore,
     apiKeyStore,
@@ -225,6 +229,25 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
     },
     { prefix: '/api/v1' },
   );
+
+  if (adminStore && adminPanelStore) {
+    await app.register(
+      async (adminV1) => {
+        await registerAdminPanelRoutes(adminV1, {
+          config,
+          redis,
+          logger,
+          adminStore,
+          adminPanelStore,
+          ...(accountInboxStore ? { accountInboxStore } : {}),
+          ...(mailer ? { mailer } : {}),
+          ...(config.adminIpAllowlist.length > 0 ? { ipAllowlist: config.adminIpAllowlist } : {}),
+          ...(onLiveSettingsMutated ? { onLiveSettingsMutated } : {}),
+        });
+      },
+      { prefix: '/admin/api/v1' },
+    );
+  }
 
   if (ownsEventHub) {
     app.addHook('onClose', async () => {

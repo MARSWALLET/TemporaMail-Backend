@@ -4,6 +4,7 @@ import { startMaintenanceJobs } from '../jobs/scheduler.js';
 import { createMailer } from '../mail/mailer.js';
 import { verifyTurnstileToken } from '../protection/turnstile.js';
 import { createDbAccountInboxStore } from '../storage/accountInboxStore.js';
+import { createDbAdminPanelStore } from '../storage/adminPanelStore.js';
 import { createDbAdminStore } from '../storage/adminStore.js';
 import { createDbApiKeyStore } from '../storage/apiKeyStore.js';
 import { createDbAuthStore } from '../storage/authStore.js';
@@ -56,6 +57,7 @@ async function main(): Promise<void> {
     ...(dbConn
       ? {
           adminStore: createDbAdminStore(dbConn.db),
+          adminPanelStore: createDbAdminPanelStore(dbConn.db),
           authStore: createDbAuthStore(dbConn.db),
           apiKeyStore: createDbApiKeyStore(dbConn.db),
           ...(accountInboxStore ? { accountInboxStore } : {}),
