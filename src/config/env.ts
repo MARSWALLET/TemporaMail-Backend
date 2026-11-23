@@ -19,7 +19,7 @@ const envSchema = z.object({
       message: 'ALLOWED_DOMAINS must contain at least one domain',
     }),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
-  API_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  API_PORT: z.coerce.number().int().min(1).max(65535).default(5000),
   REDIS_URL: z.string().trim().min(1).default('redis://localhost:6379'),
   DATABASE_URL: z.string().trim().optional().default(''),
   RSPAMD_URL: z.string().trim().default('http://localhost:11334'),
@@ -141,14 +141,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
     parsed.APP_BASE_URL ||
     (parsed.NODE_ENV === 'production'
       ? `https://${parsed.PRIMARY_DOMAIN.toLowerCase()}`
-      : 'http://localhost:3001');
+      : 'http://localhost:3000');
   const primaryDomain = parsed.PRIMARY_DOMAIN.toLowerCase();
   const corsOrigins =
     parsed.CORS_ORIGINS.length > 0
       ? parsed.CORS_ORIGINS
       : parsed.NODE_ENV === 'production'
         ? [`https://${primaryDomain}`, `https://admin.${primaryDomain}`]
-        : ['http://localhost:3000', 'http://localhost:3001'];
+        : ['http://localhost:3000', 'http://localhost:3002'];
 
   if (parsed.DEFAULT_TTL_MINUTES > parsed.MAX_TTL_MINUTES) {
     throw new Error('DEFAULT_TTL_MINUTES cannot exceed MAX_TTL_MINUTES');

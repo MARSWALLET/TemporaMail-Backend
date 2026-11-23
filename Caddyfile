@@ -1,10 +1,10 @@
 api.temporamail.app {
-    reverse_proxy api:3000 {
+    reverse_proxy api:5000 {
         flush_interval -1
     }
 }
 
 admin.temporamail.app {
     header X-Robots-Tag "noindex, nofollow"
-    reverse_proxy /admin/api/* api:3000
+    reverse_proxy /admin/api/* api:5000
 }
