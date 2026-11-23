@@ -10,9 +10,11 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { ZodError } from 'zod';
 import type { EnvConfig } from '../config/env.js';
+import type { AdminStore } from '../storage/adminStore.js';
 import { InboxEventHub } from '../stream/pubsub.js';
 import { registerSseRoute } from '../stream/sse.js';
 import { ApiError, formatApiError } from './errors.js';
+import { registerAdminRoutes } from './routes/admin.js';
 import { registerV1Routes } from './routes/v1.js';
 
 export interface ApiAppDependencies {
@@ -26,6 +28,8 @@ export interface ApiAppDependencies {
   readonly sseHeartbeatMs?: number;
   readonly getAllowedDomains?: () => readonly string[];
   readonly verifyTurnstile?: (token: string, ip: string) => Promise<boolean>;
+  readonly adminStore?: AdminStore;
+  readonly onLiveSettingsMutated?: () => Promise<void>;
 }
 
 export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyInstance> {
@@ -38,6 +42,8 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
     sseHeartbeatMs,
     getAllowedDomains,
     verifyTurnstile,
+    adminStore,
+    onLiveSettingsMutated,
   } = deps;
 
   const ownsEventHub = !providedEventHub;
@@ -133,6 +139,19 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
         eventHub,
         ...(sseHeartbeatMs !== undefined ? { heartbeatMs: sseHeartbeatMs } : {}),
       });
+      if (adminStore) {
+        await v1.register(
+          async (admin) => {
+            await registerAdminRoutes(admin, {
+              config,
+              redis,
+              adminStore,
+              ...(onLiveSettingsMutated ? { onLiveSettingsMutated } : {}),
+            });
+          },
+          { prefix: '/admin' },
+        );
+      }
     },
     { prefix: '/api/v1' },
   );

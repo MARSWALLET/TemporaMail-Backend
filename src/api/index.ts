@@ -1,6 +1,7 @@
 import { loadEnv } from '../config/env.js';
 import { createDbLiveSettingsLoader, LiveSettingsStore } from '../config/liveSettings.js';
 import { verifyTurnstileToken } from '../protection/turnstile.js';
+import { createDbAdminStore } from '../storage/adminStore.js';
 import { createDbConnection, type DbConnection } from '../storage/db.js';
 import { createRedisClient } from '../storage/redis.js';
 import { createLogger } from '../utils/logger.js';
@@ -42,6 +43,14 @@ async function main(): Promise<void> {
     getAllowedDomains: () => liveSettings.getAllowedDomains(),
     verifyTurnstile: (token, ip) =>
       verifyTurnstileToken(token, ip, { secret: config.turnstileSecret }, logger),
+    ...(dbConn
+      ? {
+          adminStore: createDbAdminStore(dbConn.db),
+          onLiveSettingsMutated: async () => {
+            await liveSettings.refresh();
+          },
+        }
+      : {}),
   });
 
   await app.listen({
