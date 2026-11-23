@@ -1,5 +1,6 @@
 import { loadEnv } from '../config/env.js';
 import { createDbLiveSettingsLoader, LiveSettingsStore } from '../config/liveSettings.js';
+import { startMaintenanceJobs } from '../jobs/scheduler.js';
 import { verifyTurnstileToken } from '../protection/turnstile.js';
 import { createDbAdminStore } from '../storage/adminStore.js';
 import { createDbConnection, type DbConnection } from '../storage/db.js';
@@ -58,6 +59,14 @@ async function main(): Promise<void> {
     port: config.apiPort,
   });
 
+  const jobs = startMaintenanceJobs({
+    config,
+    redis,
+    ...(dbConn ? { db: dbConn.db } : {}),
+    logger,
+    getAllowedDomains: () => liveSettings.getAllowedDomains(),
+  });
+
   logger.info(
     {
       port: config.apiPort,
@@ -70,6 +79,7 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string): void => {
     logger.info({ signal }, 'Shutting down API server');
+    jobs.stop();
     liveSettings.stop();
     void app
       .close()

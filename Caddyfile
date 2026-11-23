@@ -1,0 +1,5 @@
+api.temporamail.app {
+    reverse_proxy api:3000 {
+        flush_interval -1
+    }
+}
