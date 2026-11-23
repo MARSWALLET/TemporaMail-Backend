@@ -31,6 +31,18 @@ const envSchema = z.object({
   SMTP_MAX_CLIENTS: z.coerce.number().int().min(1).default(100),
   SMTP_MAX_CONNECTIONS_PER_IP: z.coerce.number().int().min(1).default(5),
   SMTP_MAX_RECIPIENTS: z.coerce.number().int().min(1).default(5),
+  CORS_ORIGINS: z
+    .string()
+    .optional()
+    .default('')
+    .transform((value) =>
+      value
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0),
+    ),
+  API_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).default(120),
+  INBOX_CREATE_LIMIT_PER_HOUR: z.coerce.number().int().min(1).default(10),
   TURNSTILE_SECRET: z.string().trim().optional().default(''),
   ADMIN_API_KEY: z.string().trim().optional().default(''),
   TLS_KEY_PATH: z.string().trim().optional().default(''),
@@ -56,6 +68,9 @@ export interface EnvConfig {
   readonly smtpMaxClients: number;
   readonly smtpMaxConnectionsPerIp: number;
   readonly smtpMaxRecipients: number;
+  readonly corsOrigins: readonly string[];
+  readonly apiRateLimitPerMin: number;
+  readonly inboxCreateLimitPerHour: number;
   readonly turnstileSecret: string;
   readonly adminApiKey: string;
   readonly tlsKeyPath: string;
@@ -65,6 +80,12 @@ export interface EnvConfig {
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
   const parsed = envSchema.parse(source);
   const smtpPort = parsed.SMTP_PORT ?? (parsed.NODE_ENV === 'production' ? 25 : 2525);
+  const corsOrigins =
+    parsed.CORS_ORIGINS.length > 0
+      ? parsed.CORS_ORIGINS
+      : parsed.NODE_ENV === 'production'
+        ? [`https://${parsed.PRIMARY_DOMAIN.toLowerCase()}`]
+        : ['http://localhost:3000', 'http://localhost:3001'];
 
   if (parsed.DEFAULT_TTL_MINUTES > parsed.MAX_TTL_MINUTES) {
     throw new Error('DEFAULT_TTL_MINUTES cannot exceed MAX_TTL_MINUTES');
@@ -89,6 +110,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
     smtpMaxClients: parsed.SMTP_MAX_CLIENTS,
     smtpMaxConnectionsPerIp: parsed.SMTP_MAX_CONNECTIONS_PER_IP,
     smtpMaxRecipients: parsed.SMTP_MAX_RECIPIENTS,
+    corsOrigins,
+    apiRateLimitPerMin: parsed.API_RATE_LIMIT_PER_MIN,
+    inboxCreateLimitPerHour: parsed.INBOX_CREATE_LIMIT_PER_HOUR,
     turnstileSecret: parsed.TURNSTILE_SECRET,
     adminApiKey: parsed.ADMIN_API_KEY,
     tlsKeyPath: parsed.TLS_KEY_PATH,

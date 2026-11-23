@@ -1,4 +1,5 @@
 import { Redis, type RedisOptions } from 'ioredis';
+import type { StoredAttachmentMetadata, StoredMessage } from '../pipeline/types.js';
 import {
   formatEmailAddress,
   generateLocalPart,
@@ -230,6 +231,114 @@ export async function deleteInbox(redis: Redis, address: string): Promise<boolea
     }
   }
 
+  await redis.del(...keysToDelete);
+  return true;
+}
+
+export async function getInboxMessageCount(redis: Redis, address: string): Promise<number> {
+  return redis.llen(redisKeys.inboxMsgs(address));
+}
+
+export async function listInboxMessages(redis: Redis, address: string): Promise<StoredMessage[]> {
+  const messageIds = await redis.lrange(redisKeys.inboxMsgs(address), 0, -1);
+  if (messageIds.length === 0) {
+    return [];
+  }
+
+  const msgKeys = messageIds.map((id) => redisKeys.msg(id));
+  const rawMessages = await redis.mget(...msgKeys);
+  const messages: StoredMessage[] = [];
+
+  for (const raw of rawMessages) {
+    if (!raw) {
+      continue;
+    }
+    try {
+      messages.push(JSON.parse(raw) as StoredMessage);
+    } catch {
+      // Ignore corrupted message payload
+    }
+  }
+
+  return messages;
+}
+
+export async function getInboxMessage(
+  redis: Redis,
+  address: string,
+  msgId: string,
+): Promise<StoredMessage | null> {
+  const messageIds = await redis.lrange(redisKeys.inboxMsgs(address), 0, -1);
+  if (!messageIds.includes(msgId)) {
+    return null;
+  }
+
+  const raw = await redis.get(redisKeys.msg(msgId));
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as StoredMessage;
+  } catch {
+    return null;
+  }
+}
+
+export async function getMessageAttachment(
+  redis: Redis,
+  address: string,
+  msgId: string,
+  index: number,
+): Promise<{ metadata: StoredAttachmentMetadata; content: Buffer } | null> {
+  const message = await getInboxMessage(redis, address, msgId);
+  if (!message) {
+    return null;
+  }
+
+  const metadata = message.attachments.find((att) => att.index === index);
+  if (!metadata) {
+    return null;
+  }
+
+  const content = await redis.getBuffer(redisKeys.att(msgId, index));
+  if (!content) {
+    return null;
+  }
+
+  return { metadata, content };
+}
+
+export async function deleteInboxMessage(
+  redis: Redis,
+  address: string,
+  msgId: string,
+): Promise<boolean> {
+  const normalized = normalizeAddress(address);
+  const msgsKey = redisKeys.inboxMsgs(normalized);
+  const messageIds = await redis.lrange(msgsKey, 0, -1);
+
+  if (!messageIds.includes(msgId)) {
+    return false;
+  }
+
+  const msgKey = redisKeys.msg(msgId);
+  const raw = await redis.get(msgKey);
+  const keysToDelete: string[] = [msgKey];
+
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as StoredMessageAttachmentShape;
+      const count = Array.isArray(parsed.attachments) ? parsed.attachments.length : 0;
+      for (let idx = 0; idx < count; idx += 1) {
+        keysToDelete.push(redisKeys.att(msgId, idx));
+      }
+    } catch {
+      // Ignore malformed JSON
+    }
+  }
+
+  await redis.lrem(msgsKey, 0, msgId);
   await redis.del(...keysToDelete);
   return true;
 }
