@@ -108,6 +108,25 @@ function createMemoryAuthStore(): AuthStore {
         ['premium', DEFAULT_PLAN_LIMITS.premium],
       ]);
     },
+    async findOAuthAccount() {
+      return null;
+    },
+    async linkOAuthAccount(input) {
+      return {
+        id: randomUUID(),
+        userId: input.userId,
+        provider: input.provider,
+        providerUserId: input.providerUserId,
+        email: input.email.toLowerCase(),
+        createdAt: new Date(),
+      };
+    },
+    async unlinkOAuthAccount() {
+      return false;
+    },
+    async listOAuthAccounts() {
+      return [];
+    },
   };
 }
 

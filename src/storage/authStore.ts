@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Database } from './db.js';
 import { planLimitsSchema, type PlanLimits } from './plans.js';
-import { emailTokens, plans, users } from './schema.js';
+import { emailTokens, oauthAccounts, plans, users } from './schema.js';
 
 export interface UserRecord {
   readonly id: string;
@@ -23,6 +23,15 @@ export interface EmailTokenRecord {
   readonly tokenHash: string;
   readonly expiresAt: Date;
   readonly usedAt: Date | null;
+}
+
+export interface OAuthAccountRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly provider: 'google';
+  readonly providerUserId: string;
+  readonly email: string;
+  readonly createdAt: Date;
 }
 
 export interface AuthStore {
@@ -49,6 +58,15 @@ export interface AuthStore {
     tokenHash: string,
     type: 'verify' | 'reset' | 'change_email',
   ): Promise<EmailTokenRecord | null>;
+  findOAuthAccount(provider: 'google', providerUserId: string): Promise<OAuthAccountRecord | null>;
+  linkOAuthAccount(input: {
+    readonly userId: string;
+    readonly provider: 'google';
+    readonly providerUserId: string;
+    readonly email: string;
+  }): Promise<OAuthAccountRecord>;
+  unlinkOAuthAccount(userId: string, provider: 'google'): Promise<boolean>;
+  listOAuthAccounts(userId: string): Promise<OAuthAccountRecord[]>;
   loadPlansMap(): Promise<Map<string, PlanLimits>>;
 }
 
@@ -172,6 +190,75 @@ export function createDbAuthStore(db: Database): AuthStore {
         expiresAt: row.expiresAt,
         usedAt: row.usedAt,
       };
+    },
+
+    async findOAuthAccount(provider, providerUserId) {
+      const [row] = await db
+        .select()
+        .from(oauthAccounts)
+        .where(
+          and(
+            eq(oauthAccounts.provider, provider),
+            eq(oauthAccounts.providerUserId, providerUserId),
+          ),
+        )
+        .limit(1);
+
+      if (!row) return null;
+      return {
+        id: row.id,
+        userId: row.userId,
+        provider: row.provider as 'google',
+        providerUserId: row.providerUserId,
+        email: row.email.toLowerCase(),
+        createdAt: row.createdAt,
+      };
+    },
+
+    async linkOAuthAccount(input) {
+      const [row] = await db
+        .insert(oauthAccounts)
+        .values({
+          userId: input.userId,
+          provider: input.provider,
+          providerUserId: input.providerUserId,
+          email: input.email.trim().toLowerCase(),
+        })
+        .returning();
+      if (!row) {
+        throw new Error('Failed to link OAuth account');
+      }
+      return {
+        id: row.id,
+        userId: row.userId,
+        provider: row.provider as 'google',
+        providerUserId: row.providerUserId,
+        email: row.email.toLowerCase(),
+        createdAt: row.createdAt,
+      };
+    },
+
+    async unlinkOAuthAccount(userId, provider) {
+      const rows = await db
+        .delete(oauthAccounts)
+        .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
+        .returning({ id: oauthAccounts.id });
+      return rows.length > 0;
+    },
+
+    async listOAuthAccounts(userId) {
+      const rows = await db
+        .select()
+        .from(oauthAccounts)
+        .where(eq(oauthAccounts.userId, userId));
+      return rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        provider: row.provider as 'google',
+        providerUserId: row.providerUserId,
+        email: row.email.toLowerCase(),
+        createdAt: row.createdAt,
+      }));
     },
 
     async loadPlansMap() {

@@ -10,6 +10,7 @@ import Fastify, {
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { ZodError } from 'zod';
+import type { GoogleOAuthClient } from '../auth/googleOAuth.js';
 import type { EnvConfig } from '../config/env.js';
 import type { Mailer } from '../mail/mailer.js';
 import type { AdminStore } from '../storage/adminStore.js';
@@ -19,6 +20,7 @@ import { registerSseRoute } from '../stream/sse.js';
 import { ApiError, formatApiError } from './errors.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerOAuthRoutes } from './routes/oauth.js';
 import { registerV1Routes } from './routes/v1.js';
 
 export interface ApiAppDependencies {
@@ -35,6 +37,7 @@ export interface ApiAppDependencies {
   readonly adminStore?: AdminStore;
   readonly authStore?: AuthStore;
   readonly mailer?: Mailer;
+  readonly googleOAuthClient?: GoogleOAuthClient;
   readonly onLiveSettingsMutated?: () => Promise<void>;
 }
 
@@ -51,6 +54,7 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
     adminStore,
     authStore,
     mailer,
+    googleOAuthClient,
     onLiveSettingsMutated,
   } = deps;
 
@@ -157,6 +161,13 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
           mailer,
           ...(getAllowedDomains ? { getAllowedDomains } : {}),
           ...(verifyTurnstile ? { verifyTurnstile } : {}),
+        });
+        await registerOAuthRoutes(v1, {
+          config,
+          redis,
+          logger,
+          authStore,
+          ...(googleOAuthClient ? { googleClient: googleOAuthClient } : {}),
         });
       }
       if (adminStore) {

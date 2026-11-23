@@ -74,6 +74,9 @@ const envSchema = z.object({
     .string()
     .trim()
     .default('TemporaMail <noreply@account.temporamail.app>'),
+  GOOGLE_CLIENT_ID: z.string().trim().optional().default(''),
+  GOOGLE_CLIENT_SECRET: z.string().trim().optional().default(''),
+  GOOGLE_REDIRECT_URI: z.string().trim().optional().default(''),
 });
 
 export interface EnvConfig {
@@ -113,6 +116,9 @@ export interface EnvConfig {
   readonly smtpOutboundUser: string;
   readonly smtpOutboundPass: string;
   readonly smtpOutboundFrom: string;
+  readonly googleClientId: string;
+  readonly googleClientSecret: string;
+  readonly googleRedirectUri: string;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
@@ -171,5 +177,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
     smtpOutboundUser: parsed.SMTP_OUTBOUND_USER,
     smtpOutboundPass: parsed.SMTP_OUTBOUND_PASS,
     smtpOutboundFrom: parsed.SMTP_OUTBOUND_FROM,
+    googleClientId: parsed.GOOGLE_CLIENT_ID,
+    googleClientSecret: parsed.GOOGLE_CLIENT_SECRET,
+    googleRedirectUri:
+      parsed.GOOGLE_REDIRECT_URI ||
+      (parsed.NODE_ENV === 'production'
+        ? `https://api.${parsed.PRIMARY_DOMAIN.toLowerCase()}/api/v1/auth/google/callback`
+        : `http://localhost:${parsed.API_PORT}/api/v1/auth/google/callback`),
   };
 }
