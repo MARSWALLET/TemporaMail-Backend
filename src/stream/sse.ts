@@ -4,6 +4,7 @@ import type { Logger } from 'pino';
 import { z } from 'zod';
 import { ApiError } from '../api/errors.js';
 import type { EnvConfig } from '../config/env.js';
+import type { AccountInboxStore } from '../storage/accountInboxStore.js';
 import { getInbox, getInboxMessage } from '../storage/redis.js';
 import { normalizeAddress } from '../utils/address.js';
 import type { InboxEventHub } from './pubsub.js';
@@ -13,6 +14,7 @@ export interface SseRouteDependencies {
   readonly redis: Redis;
   readonly logger: Logger;
   readonly eventHub: InboxEventHub;
+  readonly accountInboxStore?: AccountInboxStore;
   readonly heartbeatMs?: number;
 }
 
@@ -32,16 +34,31 @@ export async function registerSseRoute(
   app: FastifyInstance,
   deps: SseRouteDependencies,
 ): Promise<void> {
-  const { config, redis, logger, eventHub, heartbeatMs = DEFAULT_HEARTBEAT_MS } = deps;
+  const {
+    config,
+    redis,
+    logger,
+    eventHub,
+    accountInboxStore,
+    heartbeatMs = DEFAULT_HEARTBEAT_MS,
+  } = deps;
 
   app.get('/inbox/:address/stream', async (request, reply) => {
     const { address: rawAddress } = addressParamSchema.parse(request.params);
     const address = normalizeAddress(rawAddress);
-    const inbox = await getInbox(redis, address);
+    const redisInbox = await getInbox(redis, address);
+    const accountInbox =
+      !redisInbox && accountInboxStore
+        ? await accountInboxStore.findActiveInboxByAddress(address)
+        : null;
 
-    if (!inbox) {
+    if (!redisInbox && !accountInbox) {
       throw new ApiError(404, 'INBOX_NOT_FOUND', 'Inbox does not exist or has expired');
     }
+
+    const initialExpiresAt = redisInbox
+      ? redisInbox.expiresAt
+      : accountInbox!.expiresAt.getTime();
 
     const headers: Record<string, string> = {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -90,7 +107,11 @@ export async function registerSseRoute(
     const unsubscribe = eventHub.subscribe(address, (msgId) => {
       void (async () => {
         try {
-          const message = await getInboxMessage(redis, address, msgId);
+          const message = redisInbox
+            ? await getInboxMessage(redis, address, msgId)
+            : accountInbox && accountInboxStore
+              ? await accountInboxStore.getAccountMessage(accountInbox.id, msgId)
+              : null;
           if (!message || closed) {
             return;
           }
@@ -122,14 +143,19 @@ export async function registerSseRoute(
       expiryTimer = setTimeout(() => {
         void (async () => {
           try {
-            const current = await getInbox(redis, address);
-            if (!current || current.expiresAt <= Date.now()) {
+            const currentExpiresAt = redisInbox
+              ? (await getInbox(redis, address))?.expiresAt ?? 0
+              : accountInboxStore
+                ? ((await accountInboxStore.findActiveInboxByAddress(address))?.expiresAt.getTime() ??
+                  0)
+                : 0;
+            if (!currentExpiresAt || currentExpiresAt <= Date.now()) {
               writeChunk(`event: expired\ndata: ${JSON.stringify({ address })}\n\n`);
               cleanup();
               return;
             }
             // Inbox was extended while stream was open; reschedule
-            scheduleExpiryCheck(current.expiresAt);
+            scheduleExpiryCheck(currentExpiresAt);
           } catch (err) {
             logger.error({ err, address }, 'Error checking inbox expiry for SSE stream');
             cleanup();
@@ -138,7 +164,7 @@ export async function registerSseRoute(
       }, delay);
     };
 
-    scheduleExpiryCheck(inbox.expiresAt);
+    scheduleExpiryCheck(initialExpiresAt);
 
     request.raw.on('close', cleanup);
     request.raw.on('error', cleanup);

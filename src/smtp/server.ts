@@ -9,7 +9,7 @@ import {
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { EnvConfig } from '../config/env.js';
-import { inboxExists, isIpBanned } from '../storage/redis.js';
+import { accountInboxCacheExists, inboxExists, isIpBanned } from '../storage/redis.js';
 import { extractDomain, normalizeAddress } from '../utils/address.js';
 
 export interface IncomingSmtpMessage {
@@ -32,6 +32,8 @@ export interface SmtpServerHooks {
   readonly checkIpRateLimit?: (ip: string) => Promise<string | null>;
   /** Dynamic allowed domains provider (backed by Postgres live settings in Step 6). */
   readonly getAllowedDomains?: () => readonly string[];
+  /** Optional fallback check for active account-owned inboxes stored in Postgres (Part B6). */
+  readonly hasAccountInbox?: (address: string) => Promise<boolean>;
   /** Handler called when a valid message is fully received. */
   readonly onMessage: (message: IncomingSmtpMessage) => Promise<void>;
 }
@@ -241,8 +243,15 @@ export function createSmtpServer(deps: SmtpServerDependencies): SMTPServer {
             return;
           }
 
-          const exists = await inboxExists(redis, recipient);
-          if (!exists) {
+          const existsInRedis =
+            (await inboxExists(redis, recipient)) ||
+            (await accountInboxCacheExists(redis, recipient));
+          const existsInAccountDb =
+            !existsInRedis && hooks.hasAccountInbox
+              ? await hooks.hasAccountInbox(recipient)
+              : false;
+
+          if (!existsInRedis && !existsInAccountDb) {
             logger.info(
               { ip, sessionId: session.id, recipient, reason: 'mailbox_not_found' },
               'SMTP RCPT TO rejected',

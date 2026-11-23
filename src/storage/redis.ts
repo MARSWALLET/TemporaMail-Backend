@@ -11,6 +11,7 @@ import {
 export const redisKeys = {
   inbox: (address: string): string => `inbox:${normalizeAddress(address)}`,
   inboxMsgs: (address: string): string => `inbox:${normalizeAddress(address)}:msgs`,
+  acctInbox: (address: string): string => `acct:inbox:${normalizeAddress(address)}`,
   msg: (id: string): string => `msg:${id}`,
   att: (id: string, index: number): string => `att:${id}:${index}`,
   rlGen: (ip: string): string => `rl:gen:${ip}`,
@@ -56,6 +57,11 @@ export function createRedisClient(redisUrl: string, options: RedisOptions = {}):
 
 export async function inboxExists(redis: Redis, address: string): Promise<boolean> {
   const exists = await redis.exists(redisKeys.inbox(address));
+  return exists === 1;
+}
+
+export async function accountInboxCacheExists(redis: Redis, address: string): Promise<boolean> {
+  const exists = await redis.exists(redisKeys.acctInbox(address));
   return exists === 1;
 }
 

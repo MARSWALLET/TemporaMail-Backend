@@ -4,6 +4,7 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { EnvConfig } from '../config/env.js';
 import type { IncomingSmtpMessage, SmtpError } from '../smtp/server.js';
+import type { AccountInboxStore } from '../storage/accountInboxStore.js';
 import { redisKeys } from '../storage/redis.js';
 import { normalizeAddress } from '../utils/address.js';
 import { extractOtpAndLinks } from '../utils/otp.js';
@@ -16,6 +17,7 @@ export interface PipelineDependencies {
   readonly redis: Redis;
   readonly logger: Logger;
   readonly spamChecker?: SpamChecker;
+  readonly accountInboxStore?: AccountInboxStore;
 }
 
 export interface ProcessMessageResult {
@@ -75,7 +77,7 @@ export async function processIncomingMessage(
   message: IncomingSmtpMessage,
   deps: PipelineDependencies,
 ): Promise<ProcessMessageResult> {
-  const { config, redis, logger, spamChecker } = deps;
+  const { config, redis, logger, spamChecker, accountInboxStore } = deps;
 
   // 1. Parse raw MIME message
   const parsed = await simpleParser(message.raw);
@@ -142,16 +144,66 @@ export async function processIncomingMessage(
   const date = (parsed.date ?? message.receivedAt).toISOString();
   const deliveredMessageIds = new Map<string, string>();
 
-  // 6 & 7. Store per-recipient message, attachments, trim inbox list, and publish event
+  // 6 & 7. Store per-recipient message in Redis (anonymous) or Postgres (account), and publish SSE
   for (const rawRecipient of message.rcptTo) {
     const recipient = normalizeAddress(rawRecipient);
     const inboxKey = redisKeys.inbox(recipient);
     const remainingTtl = await redis.ttl(inboxKey);
 
     if (remainingTtl <= 0) {
+      // Check if recipient is an active account-owned inbox stored in Postgres
+      const accountInbox = accountInboxStore
+        ? await accountInboxStore.findActiveInboxByAddress(recipient)
+        : null;
+
+      if (!accountInbox) {
+        logger.info(
+          { sessionId: message.sessionId, recipient },
+          'Skipping delivery to expired or missing inbox',
+        );
+        continue;
+      }
+
+      const msgId = randomUUID();
+      const storedMessage: StoredMessage = {
+        id: msgId,
+        from,
+        to: [recipient],
+        subject,
+        date,
+        text,
+        html: sanitized.html,
+        hasRemoteContent: sanitized.hasRemoteContent,
+        otp,
+        links,
+        attachments: attachments.map((a) => a.metadata),
+        spamScore,
+        spamFlagged,
+      };
+
+      await accountInboxStore!.storeAccountMessage({
+        inboxId: accountInbox.id,
+        message: storedMessage,
+        attachments: attachments.map((a) => ({
+          ...a.metadata,
+          contentBase64: a.content.toString('base64'),
+        })),
+        expiresAt: accountInbox.expiresAt,
+      });
+
+      // Publish new message ID on Redis pub/sub so SSE works identically for account inboxes
+      await redis.publish(redisKeys.newChannel(recipient), msgId);
+      deliveredMessageIds.set(recipient, msgId);
+
       logger.info(
-        { sessionId: message.sessionId, recipient },
-        'Skipping delivery to expired or missing inbox',
+        {
+          sessionId: message.sessionId,
+          recipient,
+          msgId,
+          store: 'postgres_account',
+          hasOtp: otp !== null,
+        },
+        'Stored inbound account message and published notification',
       );
       continue;
     }

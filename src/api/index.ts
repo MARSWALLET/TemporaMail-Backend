@@ -3,6 +3,7 @@ import { createDbLiveSettingsLoader, LiveSettingsStore } from '../config/liveSet
 import { startMaintenanceJobs } from '../jobs/scheduler.js';
 import { createMailer } from '../mail/mailer.js';
 import { verifyTurnstileToken } from '../protection/turnstile.js';
+import { createDbAccountInboxStore } from '../storage/accountInboxStore.js';
 import { createDbAdminStore } from '../storage/adminStore.js';
 import { createDbAuthStore } from '../storage/authStore.js';
 import { createDbConnection, type DbConnection } from '../storage/db.js';
@@ -40,6 +41,8 @@ async function main(): Promise<void> {
 
   const mailer = createMailer({ config, logger });
 
+  const accountInboxStore = dbConn ? createDbAccountInboxStore(dbConn.db) : undefined;
+
   const app = await createApiApp({
     config,
     redis,
@@ -53,6 +56,7 @@ async function main(): Promise<void> {
       ? {
           adminStore: createDbAdminStore(dbConn.db),
           authStore: createDbAuthStore(dbConn.db),
+          ...(accountInboxStore ? { accountInboxStore } : {}),
           onLiveSettingsMutated: async () => {
             await liveSettings.refresh();
           },
@@ -69,6 +73,7 @@ async function main(): Promise<void> {
     config,
     redis,
     ...(dbConn ? { db: dbConn.db } : {}),
+    ...(accountInboxStore ? { accountInboxStore } : {}),
     logger,
     getAllowedDomains: () => liveSettings.getAllowedDomains(),
   });

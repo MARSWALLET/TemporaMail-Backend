@@ -13,11 +13,13 @@ import { ZodError } from 'zod';
 import type { GoogleOAuthClient } from '../auth/googleOAuth.js';
 import type { EnvConfig } from '../config/env.js';
 import type { Mailer } from '../mail/mailer.js';
+import type { AccountInboxStore } from '../storage/accountInboxStore.js';
 import type { AdminStore } from '../storage/adminStore.js';
 import type { AuthStore } from '../storage/authStore.js';
 import { InboxEventHub } from '../stream/pubsub.js';
 import { registerSseRoute } from '../stream/sse.js';
 import { ApiError, formatApiError } from './errors.js';
+import { registerAccountInboxRoutes } from './routes/accountInboxes.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerOAuthRoutes } from './routes/oauth.js';
@@ -37,6 +39,7 @@ export interface ApiAppDependencies {
   readonly verifyTurnstile?: (token: string, ip: string) => Promise<boolean>;
   readonly adminStore?: AdminStore;
   readonly authStore?: AuthStore;
+  readonly accountInboxStore?: AccountInboxStore;
   readonly mailer?: Mailer;
   readonly googleOAuthClient?: GoogleOAuthClient;
   readonly onLiveSettingsMutated?: () => Promise<void>;
@@ -54,6 +57,7 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
     verifyTurnstile,
     adminStore,
     authStore,
+    accountInboxStore,
     mailer,
     googleOAuthClient,
     onLiveSettingsMutated,
@@ -151,6 +155,7 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
         redis,
         logger,
         eventHub,
+        ...(accountInboxStore ? { accountInboxStore } : {}),
         ...(sseHeartbeatMs !== undefined ? { heartbeatMs: sseHeartbeatMs } : {}),
       });
       if (authStore && mailer) {
@@ -177,6 +182,15 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
           authStore,
           mailer,
         });
+        if (accountInboxStore) {
+          await registerAccountInboxRoutes(v1, {
+            config,
+            redis,
+            authStore,
+            accountInboxStore,
+            ...(getAllowedDomains ? { getAllowedDomains } : {}),
+          });
+        }
       }
       if (adminStore) {
         await v1.register(

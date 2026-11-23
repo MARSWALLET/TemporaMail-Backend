@@ -1,6 +1,7 @@
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { EnvConfig } from '../config/env.js';
+import type { AccountInboxStore } from '../storage/accountInboxStore.js';
 import type { Database } from '../storage/db.js';
 import { runDomainHealthCheck } from './domainHealth.js';
 import { runRedisCleanup } from './redisCleanup.js';
@@ -10,6 +11,7 @@ export interface MaintenanceSchedulerDeps {
   readonly config: EnvConfig;
   readonly redis: Redis;
   readonly db?: Database;
+  readonly accountInboxStore?: AccountInboxStore;
   readonly logger: Logger;
   readonly getAllowedDomains: () => readonly string[];
 }
@@ -25,14 +27,19 @@ const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 export function startMaintenanceJobs(
   deps: MaintenanceSchedulerDeps,
 ): MaintenanceSchedulerHandle {
-  const { config, redis, db, logger, getAllowedDomains } = deps;
+  const { config, redis, db, accountInboxStore, logger, getAllowedDomains } = deps;
   const timers: Array<ReturnType<typeof setInterval>> = [];
 
-  // Every 5 minutes: Redis orphan cleanup & TTL consistency check
+  // Every 5 minutes: Redis orphan cleanup & expired account inbox cleanup
   const redisTimer = setInterval(() => {
     void runRedisCleanup(redis, logger).catch((err) => {
       logger.error({ err }, 'Redis cleanup job failed');
     });
+    if (accountInboxStore) {
+      void accountInboxStore.purgeExpired().catch((err) => {
+        logger.error({ err }, 'Account inbox purge job failed');
+      });
+    }
   }, FIVE_MINUTES_MS);
   redisTimer.unref();
   timers.push(redisTimer);

@@ -5,6 +5,7 @@ import { BlocklistStore } from '../protection/blocklist.js';
 import { checkDnsbl } from '../protection/dnsbl.js';
 import { checkSmtpIpRateLimit } from '../protection/ipLimiter.js';
 import { createCompositeSpamChecker } from '../protection/spamChecker.js';
+import { createDbAccountInboxStore } from '../storage/accountInboxStore.js';
 import { createDbConnection, type DbConnection } from '../storage/db.js';
 import { createRedisClient } from '../storage/redis.js';
 import { insertSmtpLog } from '../storage/repositories.js';
@@ -71,12 +72,20 @@ async function main(): Promise<void> {
     },
   });
 
+  const accountInboxStore = dbConn ? createDbAccountInboxStore(dbConn.db) : undefined;
+
   const server = createSmtpServer({
     config,
     redis,
     logger,
     hooks: {
       getAllowedDomains: () => liveSettings.getAllowedDomains(),
+      ...(accountInboxStore
+        ? {
+            hasAccountInbox: async (address: string) =>
+              (await accountInboxStore.findActiveInboxByAddress(address)) !== null,
+          }
+        : {}),
       async checkIpRateLimit(ip) {
         const snap = liveSettings.getSnapshot();
         const reason = await checkSmtpIpRateLimit(
@@ -125,6 +134,7 @@ async function main(): Promise<void> {
             redis,
             logger,
             spamChecker,
+            ...(accountInboxStore ? { accountInboxStore } : {}),
           });
           recordSmtpLog({
             ip: message.remoteAddress,
