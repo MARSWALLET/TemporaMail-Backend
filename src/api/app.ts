@@ -21,6 +21,7 @@ import { ApiError, formatApiError } from './errors.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerOAuthRoutes } from './routes/oauth.js';
+import { registerTwoFactorRoutes } from './routes/twoFactor.js';
 import { registerV1Routes } from './routes/v1.js';
 
 export interface ApiAppDependencies {
@@ -168,6 +169,13 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
           logger,
           authStore,
           ...(googleOAuthClient ? { googleClient: googleOAuthClient } : {}),
+        });
+        await registerTwoFactorRoutes(v1, {
+          config,
+          redis,
+          logger,
+          authStore,
+          mailer,
         });
       }
       if (adminStore) {

@@ -77,6 +77,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().trim().optional().default(''),
   GOOGLE_CLIENT_SECRET: z.string().trim().optional().default(''),
   GOOGLE_REDIRECT_URI: z.string().trim().optional().default(''),
+  TOTP_ENCRYPTION_KEY: z.string().trim().optional().default(''),
 });
 
 export interface EnvConfig {
@@ -119,6 +120,7 @@ export interface EnvConfig {
   readonly googleClientId: string;
   readonly googleClientSecret: string;
   readonly googleRedirectUri: string;
+  readonly totpEncryptionKey: string;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
@@ -184,5 +186,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
       (parsed.NODE_ENV === 'production'
         ? `https://api.${parsed.PRIMARY_DOMAIN.toLowerCase()}/api/v1/auth/google/callback`
         : `http://localhost:${parsed.API_PORT}/api/v1/auth/google/callback`),
+    totpEncryptionKey:
+      parsed.TOTP_ENCRYPTION_KEY ||
+      (parsed.NODE_ENV === 'production'
+        ? ''
+        : '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
   };
 }

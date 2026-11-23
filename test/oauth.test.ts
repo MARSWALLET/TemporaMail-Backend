@@ -120,6 +120,16 @@ function createMemoryAuthStore() {
     async listOAuthAccounts(userId) {
       return Array.from(oauthByKey.values()).filter((v) => v.userId === userId);
     },
+    async setTotpSecret() {},
+    async getTotpSecret() {
+      return null;
+    },
+    async enableTotp() {},
+    async disableTotp() {},
+    async replaceRecoveryCodes() {},
+    async consumeRecoveryCode() {
+      return false;
+    },
     async loadPlansMap() {
       return new Map<string, PlanLimits>([
         ['anonymous', DEFAULT_PLAN_LIMITS.anonymous],

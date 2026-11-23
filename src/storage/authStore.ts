@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Database } from './db.js';
 import { planLimitsSchema, type PlanLimits } from './plans.js';
-import { emailTokens, oauthAccounts, plans, users } from './schema.js';
+import { emailTokens, oauthAccounts, plans, recoveryCodes, totpSecrets, users } from './schema.js';
 
 export interface UserRecord {
   readonly id: string;
@@ -67,6 +67,12 @@ export interface AuthStore {
   }): Promise<OAuthAccountRecord>;
   unlinkOAuthAccount(userId: string, provider: 'google'): Promise<boolean>;
   listOAuthAccounts(userId: string): Promise<OAuthAccountRecord[]>;
+  setTotpSecret(userId: string, secretEncrypted: string): Promise<void>;
+  getTotpSecret(userId: string): Promise<string | null>;
+  enableTotp(userId: string, recoveryCodeHashes: readonly string[]): Promise<void>;
+  disableTotp(userId: string): Promise<void>;
+  replaceRecoveryCodes(userId: string, recoveryCodeHashes: readonly string[]): Promise<void>;
+  consumeRecoveryCode(userId: string, codeHash: string): Promise<boolean>;
   loadPlansMap(): Promise<Map<string, PlanLimits>>;
 }
 
@@ -259,6 +265,71 @@ export function createDbAuthStore(db: Database): AuthStore {
         email: row.email.toLowerCase(),
         createdAt: row.createdAt,
       }));
+    },
+
+    async setTotpSecret(userId, secretEncrypted) {
+      await db
+        .insert(totpSecrets)
+        .values({ userId, secretEncrypted })
+        .onConflictDoUpdate({
+          target: totpSecrets.userId,
+          set: { secretEncrypted, createdAt: new Date() },
+        });
+    },
+
+    async getTotpSecret(userId) {
+      const [row] = await db
+        .select({ secretEncrypted: totpSecrets.secretEncrypted })
+        .from(totpSecrets)
+        .where(eq(totpSecrets.userId, userId))
+        .limit(1);
+      return row?.secretEncrypted ?? null;
+    },
+
+    async enableTotp(userId, recoveryCodeHashes) {
+      await db.update(users).set({ totpEnabled: true }).where(eq(users.id, userId));
+      await db.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
+      if (recoveryCodeHashes.length > 0) {
+        await db.insert(recoveryCodes).values(
+          recoveryCodeHashes.map((codeHash) => ({
+            userId,
+            codeHash,
+          })),
+        );
+      }
+    },
+
+    async disableTotp(userId) {
+      await db.update(users).set({ totpEnabled: false }).where(eq(users.id, userId));
+      await db.delete(totpSecrets).where(eq(totpSecrets.userId, userId));
+      await db.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
+    },
+
+    async replaceRecoveryCodes(userId, recoveryCodeHashes) {
+      await db.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
+      if (recoveryCodeHashes.length > 0) {
+        await db.insert(recoveryCodes).values(
+          recoveryCodeHashes.map((codeHash) => ({
+            userId,
+            codeHash,
+          })),
+        );
+      }
+    },
+
+    async consumeRecoveryCode(userId, codeHash) {
+      const rows = await db
+        .update(recoveryCodes)
+        .set({ usedAt: new Date() })
+        .where(
+          and(
+            eq(recoveryCodes.userId, userId),
+            eq(recoveryCodes.codeHash, codeHash),
+            isNull(recoveryCodes.usedAt),
+          ),
+        )
+        .returning({ id: recoveryCodes.id });
+      return rows.length > 0;
     },
 
     async loadPlansMap() {

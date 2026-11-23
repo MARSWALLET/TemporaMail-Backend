@@ -127,6 +127,16 @@ function createMemoryAuthStore(): AuthStore {
     async listOAuthAccounts() {
       return [];
     },
+    async setTotpSecret() {},
+    async getTotpSecret() {
+      return null;
+    },
+    async enableTotp() {},
+    async disableTotp() {},
+    async replaceRecoveryCodes() {},
+    async consumeRecoveryCode() {
+      return false;
+    },
   };
 }
 
