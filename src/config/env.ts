@@ -60,6 +60,20 @@ const envSchema = z.object({
   ADMIN_API_KEY: z.string().trim().optional().default(''),
   TLS_KEY_PATH: z.string().trim().optional().default(''),
   TLS_CERT_PATH: z.string().trim().optional().default(''),
+  APP_BASE_URL: z.string().trim().optional().default(''),
+  SMTP_OUTBOUND_HOST: z.string().trim().optional().default(''),
+  SMTP_OUTBOUND_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_OUTBOUND_SECURE: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .default(false)
+    .transform((v) => v === true || v === 'true' || v === '1'),
+  SMTP_OUTBOUND_USER: z.string().trim().optional().default(''),
+  SMTP_OUTBOUND_PASS: z.string().optional().default(''),
+  SMTP_OUTBOUND_FROM: z
+    .string()
+    .trim()
+    .default('TemporaMail <noreply@account.temporamail.app>'),
 });
 
 export interface EnvConfig {
@@ -92,11 +106,23 @@ export interface EnvConfig {
   readonly adminApiKey: string;
   readonly tlsKeyPath: string;
   readonly tlsCertPath: string;
+  readonly appBaseUrl: string;
+  readonly smtpOutboundHost: string;
+  readonly smtpOutboundPort: number;
+  readonly smtpOutboundSecure: boolean;
+  readonly smtpOutboundUser: string;
+  readonly smtpOutboundPass: string;
+  readonly smtpOutboundFrom: string;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
   const parsed = envSchema.parse(source);
   const smtpPort = parsed.SMTP_PORT ?? (parsed.NODE_ENV === 'production' ? 25 : 2525);
+  const appBaseUrl =
+    parsed.APP_BASE_URL ||
+    (parsed.NODE_ENV === 'production'
+      ? `https://${parsed.PRIMARY_DOMAIN.toLowerCase()}`
+      : 'http://localhost:3001');
   const corsOrigins =
     parsed.CORS_ORIGINS.length > 0
       ? parsed.CORS_ORIGINS
@@ -138,5 +164,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): EnvConfig {
     adminApiKey: parsed.ADMIN_API_KEY,
     tlsKeyPath: parsed.TLS_KEY_PATH,
     tlsCertPath: parsed.TLS_CERT_PATH,
+    appBaseUrl,
+    smtpOutboundHost: parsed.SMTP_OUTBOUND_HOST,
+    smtpOutboundPort: parsed.SMTP_OUTBOUND_PORT,
+    smtpOutboundSecure: parsed.SMTP_OUTBOUND_SECURE,
+    smtpOutboundUser: parsed.SMTP_OUTBOUND_USER,
+    smtpOutboundPass: parsed.SMTP_OUTBOUND_PASS,
+    smtpOutboundFrom: parsed.SMTP_OUTBOUND_FROM,
   };
 }
