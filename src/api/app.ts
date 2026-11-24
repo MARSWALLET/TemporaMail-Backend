@@ -96,6 +96,15 @@ export async function createApiApp(deps: ApiAppDependencies): Promise<FastifyIns
       }
       callback(new ApiError(403, 'CORS_FORBIDDEN', 'Origin not allowed'), false);
     },
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-requested-with',
+      'x-csrf-token',
+      'x-owner-token',
+      'x-admin-api-key',
+    ],
     credentials: true,
   });
 
