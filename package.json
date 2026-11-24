@@ -12,6 +12,7 @@
     "start:api": "node dist/api/index.js",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
+    "db:migrate": "tsx src/cli/migrate.ts",
     "admin:cli": "tsx src/cli/admin.ts",
     "test": "vitest run",
     "test:watch": "vitest"
